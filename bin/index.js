@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-const axios = require("axios");
+const { execSync } = require("child_process");
 const moment = require("moment");
 const fs = require("fs");
 
@@ -84,16 +84,28 @@ async function init() {
   }
 }
 
+// Function to fetch SSL certificate expiry date using openssl
 async function getCertificateExpiry(domain) {
-  try {
-    const response = await axios.get(`https://${domain}`);
-    const certInfo = response.request.connection.getPeerCertificate();
-    const expiryDate = moment(new Date(certInfo.valid_to));
-    return [domain, expiryDate, checkExpiryWithinDays(expiryDate), null];
-  } catch (error) {
-    console.error(`Error fetching certificate for ${domain}:`, error.message);
-    return [domain, null, null, error.message];
-  }
+    try {
+        const command = `echo | openssl s_client -servername ${domain} -connect ${domain}:443 2>/dev/null | openssl x509 -noout -enddate`;
+        const output = execSync(command).toString();
+        const match = output.match(/notAfter=(.*)/);
+        if (match) {
+            const expiryDate = moment(new Date(match[1]));
+            return [
+              domain,
+              expiryDate,
+              checkExpiryWithinDays(expiryDate),
+              null,
+            ];
+        } else {
+            console.error(`Failed to parse expiry date for ${domain}`);
+            return [domain, null, null, error.message];
+        }
+    } catch (error) {
+        console.error(`Error fetching certificate for ${domain}:`, error.message);
+        return [domain, null, null, error.message];
+    }
 }
 
 // Function to check expiry within a given number of days
