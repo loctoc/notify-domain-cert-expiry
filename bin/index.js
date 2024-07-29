@@ -1,4 +1,6 @@
 #! /usr/bin/env node
+const axios = require("axios");
+
 const { execSync } = require("child_process");
 const moment = require("moment");
 const fs = require("fs");
