@@ -40,12 +40,15 @@ async function init() {
   );
 
   const domainsWithCertExpiring = domainsWithExpiry.filter(
-    (domainWithExpiry) => domainWithExpiry[2] <= threshold
-  );
+    (domainWithExpiry) => {
+      const [_domain, _expiry, expiresInDays, error] = domainWithExpiry;
+      return !error && expiresInDays !== null && expiresInDays <= threshold;
+    }
+  ).sort((a, b) => a[0].localeCompare(b[0]));
 
   const domainsHealthy = domainsWithExpiry.filter(
     (domainWithExpiry) => !domainWithExpiry[3] && domainWithExpiry[2] > threshold
-  );
+  ).sort((a, b) => a[0].localeCompare(b[0]));
 
   const domainsWithErrorsBlocks = domainsWithErrors.map((domain) => {
     const [domainName, _a, _b, errorMessage] = domain;
@@ -53,7 +56,7 @@ async function init() {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `Failed to verify for [${domainName}] - ${errorMessage}`,
+        text: `• Failed to verify for [${domainName}] - ${errorMessage}`,
       },
     };
   });
@@ -65,7 +68,7 @@ async function init() {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `Certificate for [${domainName}] is going to expires in *${expiresInDays} days* [${expiry.format(
+          text: `• Certificate for [${domainName}] is going to expires in *${expiresInDays} days* [${expiry.format(
             "DD-MMM-YYYY"
           )}]`,
         },
@@ -80,7 +83,7 @@ async function init() {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `Certificate for [${domainName}] is valid for *${expiresInDays} days* [${expiry.format(
+          text: `• Certificate for [${domainName}] is valid for *${expiresInDays} days* [${expiry.format(
             "DD-MMM-YYYY"
           )}]`,
         },
@@ -88,19 +91,48 @@ async function init() {
     }
   );
 
-  if (domainsWithCertExpiring.length || domainsWithErrorsBlocks.length || domainsHealthyBlocks.length) {
-    const allBlocks = [
-      ...domainsCertsBeingExpiredBlocks,
-      ...domainsWithErrorsBlocks,
-      ...domainsHealthyBlocks,
-    ].filter(Boolean);
+  const allBlocks = [];
 
+  const urgentBlocks = [...domainsCertsBeingExpiredBlocks, ...domainsWithErrorsBlocks];
+  if (urgentBlocks.length > 0) {
+    allBlocks.push({
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "🚨 RED ALERT - Immediate Attention Required",
+        emoji: true,
+      },
+    });
+    allBlocks.push({ type: "divider" });
+    allBlocks.push(...urgentBlocks);
+  }
+
+  if (domainsHealthyBlocks.length > 0) {
+    // Add a spacer if we have previous blocks
+    if (allBlocks.length > 0) {
+      allBlocks.push({ type: "section", text: { type: "mrkdwn", text: " " } });
+    }
+    allBlocks.push({
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "✅ All Good - Healthy Domains",
+        emoji: true,
+      },
+    });
+    allBlocks.push({ type: "divider" });
+    allBlocks.push(...domainsHealthyBlocks);
+  }
+
+  if (allBlocks.length > 0) {
+    // ... chunking logic follows ...
     const chunkSize = 40;
     for (let i = 0; i < allBlocks.length; i += chunkSize) {
       const chunk = allBlocks.slice(i, i + chunkSize);
       const body = {
         blocks: chunk,
       };
+      // ...
 
       try {
         const response = await axios.post(slackNotifyUrl, body, {
