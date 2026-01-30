@@ -43,6 +43,10 @@ async function init() {
     (domainWithExpiry) => domainWithExpiry[2] <= threshold
   );
 
+  const domainsHealthy = domainsWithExpiry.filter(
+    (domainWithExpiry) => !domainWithExpiry[3] && domainWithExpiry[2] > threshold
+  );
+
   const domainsWithErrorsBlocks = domainsWithErrors.map((domain) => {
     const [domainName, _a, _b, errorMessage] = domain;
     return {
@@ -69,10 +73,26 @@ async function init() {
     }
   );
 
-  if (domainsWithCertExpiring.length || domainsWithErrorsBlocks.length) {
+  const domainsHealthyBlocks = domainsHealthy.map(
+    (domain) => {
+      const [domainName, expiry, expiresInDays] = domain;
+      return {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Certificate for [${domainName}] is valid for *${expiresInDays} days* [${expiry.format(
+            "DD-MMM-YYYY"
+          )}]`,
+        },
+      };
+    }
+  );
+
+  if (domainsWithCertExpiring.length || domainsWithErrorsBlocks.length || domainsHealthyBlocks.length) {
     const allBlocks = [
       ...domainsCertsBeingExpiredBlocks,
       ...domainsWithErrorsBlocks,
+      ...domainsHealthyBlocks,
     ].filter(Boolean);
 
     const chunkSize = 40;
