@@ -69,45 +69,55 @@ async function init() {
     }
   );
 
-  if (domainsWithCertExpiring.length || domainsWithErrors.length) {
-    const body = {
-      blocks: [
-        ...domainsCertsBeingExpiredBlocks,
-        ...domainsWithErrorsBlocks,
-      ].filter(Boolean),
-    };
+  if (domainsWithCertExpiring.length || domainsWithErrorsBlocks.length) {
+    const allBlocks = [
+      ...domainsCertsBeingExpiredBlocks,
+      ...domainsWithErrorsBlocks,
+    ].filter(Boolean);
 
-    const response = await axios.post(slackNotifyUrl, body, {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-    console.log(`Slack notification sent: ${response.status}`);
+    const chunkSize = 40;
+    for (let i = 0; i < allBlocks.length; i += chunkSize) {
+      const chunk = allBlocks.slice(i, i + chunkSize);
+      const body = {
+        blocks: chunk,
+      };
+
+      try {
+        const response = await axios.post(slackNotifyUrl, body, {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        console.log(`Slack notification part ${i / chunkSize + 1} sent: ${response.status}`);
+      } catch (e) {
+        console.error(`Failed to send slack notification part ${i / chunkSize + 1}`, e.message);
+      }
+    }
   }
 }
 
 // Function to fetch SSL certificate expiry date using openssl
 async function getCertificateExpiry(domain) {
-    try {
-        const command = `echo | openssl s_client -servername ${domain} -connect ${domain}:443 2>/dev/null | openssl x509 -noout -enddate`;
-        const output = execSync(command).toString();
-        const match = output.match(/notAfter=(.*)/);
-        if (match) {
-            const expiryDate = moment(new Date(match[1]));
-            return [
-              domain,
-              expiryDate,
-              checkExpiryWithinDays(expiryDate),
-              null,
-            ];
-        } else {
-            console.error(`Failed to parse expiry date for ${domain}`);
-            return [domain, null, null, error.message];
-        }
-    } catch (error) {
-        console.error(`Error fetching certificate for ${domain}:`, error.message);
-        return [domain, null, null, error.message];
+  try {
+    const command = `echo | openssl s_client -servername ${domain} -connect ${domain}:443 2>/dev/null | openssl x509 -noout -enddate`;
+    const output = execSync(command).toString();
+    const match = output.match(/notAfter=(.*)/);
+    if (match) {
+      const expiryDate = moment(new Date(match[1]));
+      return [
+        domain,
+        expiryDate,
+        checkExpiryWithinDays(expiryDate),
+        null,
+      ];
+    } else {
+      console.error(`Failed to parse expiry date for ${domain}`);
+      return [domain, null, null, error.message];
     }
+  } catch (error) {
+    console.error(`Error fetching certificate for ${domain}:`, error.message);
+    return [domain, null, null, error.message];
+  }
 }
 
 // Function to check expiry within a given number of days
